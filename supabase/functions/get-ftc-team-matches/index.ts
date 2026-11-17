@@ -253,7 +253,7 @@ Deno.serve(async (req: Request) => {
       if (eventReadError) throw new Error(`Could not load saved event link: ${eventReadError.message}`);
       storedEvent = eventRecord as FirstRecord | null;
 
-      if (storedEvent) {
+      if (storedEvent && (!storedEvent.youtube_verified || !text(storedEvent.youtube_url))) {
         const row = eventRows.find(item => item.event_code === eventCode);
         if (row) {
           try {
