@@ -26,7 +26,7 @@ function normalizeMatch(match: FirstRecord) {
   const redTeams = teams.filter(team => String(team.station ?? "").toLowerCase().startsWith("red"));
   const blueTeams = teams.filter(team => String(team.station ?? "").toLowerCase().startsWith("blue"));
   return {
-    matchNumber: Number(match.matchNumber ?? match.matchNumber),
+    matchNumber: Number(match.matchNumber ?? 0),
     description: typeof match.description === "string" ? match.description : "",
     tournamentLevel: typeof match.tournamentLevel === "string" ? match.tournamentLevel : "qual",
     startTime: typeof match.startTime === "string" ? match.startTime : null,
