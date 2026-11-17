@@ -113,7 +113,7 @@ async function discoverFirstEventYoutubeUrl(event: EventRow): Promise<string | n
   if (!response.ok) return null;
 
   const html = await response.text();
-  const hrefs = [...html.matchAll(/href\\s*=\\s*["']([^"']+)["']/gi)];
+  const hrefs = [...html.matchAll(/href\s*=\s*["']([^"']+)["']/gi)];
   for (const match of hrefs) {
     try {
       const candidate = new URL(match[1].replace(/&amp;/g, "&"), eventPageUrl);
