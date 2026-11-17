@@ -136,6 +136,7 @@ async function discoverYoutubeUrl(event: EventRow, apiKey: string): Promise<stri
   searchUrl.search = new URLSearchParams({
     part: "snippet",
     type: "video",
+    videoDuration: "long",
     maxResults: "25",
     q: query,
     key: apiKey,
@@ -151,7 +152,7 @@ async function discoverYoutubeUrl(event: EventRow, apiKey: string): Promise<stri
 
   const videosUrl = new URL("https://www.googleapis.com/youtube/v3/videos");
   videosUrl.search = new URLSearchParams({
-    part: "snippet",
+    part: "snippet,contentDetails",
     id: ids.join(","),
     key: apiKey,
   }).toString();
@@ -163,6 +164,8 @@ async function discoverYoutubeUrl(event: EventRow, apiKey: string): Promise<stri
       const snippet = (video.snippet ?? {}) as FirstRecord;
       const title = text(snippet.title) ?? "";
       const description = text(snippet.description) ?? "";
+      const content = (video.contentDetails ?? {}) as FirstRecord;
+      const duration = parseIsoDuration(String(content.duration ?? ""));
       const titleTokens = new Set(meaningfulTokens(title));
       const descriptionTokens = new Set(meaningfulTokens(description));
       const titleOverlap = eventTokens.filter(token => titleTokens.has(token)).length;
@@ -170,10 +173,10 @@ async function discoverYoutubeUrl(event: EventRow, apiKey: string): Promise<stri
       // Prefer event names in the title, but allow a match in the description
       // when a video title is generic (for example, "FTC Match Replay").
       const score = titleOverlap / eventTokens.length + (descriptionOverlap / eventTokens.length) * 0.25;
-      return { id: text(video.id), score, titleOverlap };
+      return { id: text(video.id), score, titleOverlap, duration };
     })
-    .filter((video: { id: string | null; score: number; titleOverlap: number }) =>
-      video.id && (video.titleOverlap > 0 || video.score >= 0.5))
+    .filter((video: { id: string | null; score: number; titleOverlap: number; duration: number }) =>
+      video.id && video.duration >= 7200 && (video.titleOverlap > 0 || video.score >= 0.5))
     .sort((a: { score: number }, b: { score: number }) => b.score - a.score);
 
   return candidates.length ? `https://www.youtube.com/watch?v=${candidates[0].id}` : null;
