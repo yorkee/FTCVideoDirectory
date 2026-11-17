@@ -131,17 +131,17 @@ async function discoverFirstEventYoutubeUrl(event: EventRow): Promise<string | n
 }
 
 async function discoverYoutubeUrl(event: EventRow, apiKey: string): Promise<string | null> {
-  const eventTokens = meaningfulTokens(event.event_name);
-  if (eventTokens.length < 2) return null;
+  // Qualifier/tournament are intentionally ignored, so city and state provide
+  // useful matching tokens for events such as "Athens Qualifier".
+  const eventTokens = meaningfulTokens([event.event_name, event.city, event.state_prov].filter(Boolean).join(" "));
+  if (!eventTokens.length) return null;
 
-  const query = [event.event_name, event.city, event.state_prov, "FIRST Tech Challenge livestream"].filter(Boolean).join(" ");
+  const query = [event.event_name, event.city, event.state_prov, "FIRST Tech Challenge FTC"].filter(Boolean).join(" ");
   const searchUrl = new URL("https://www.googleapis.com/youtube/v3/search");
   searchUrl.search = new URLSearchParams({
     part: "snippet",
     type: "video",
-    eventType: "completed",
-    videoDuration: "long",
-    maxResults: "10",
+    maxResults: "25",
     q: query,
     key: apiKey,
   }).toString();
@@ -156,7 +156,7 @@ async function discoverYoutubeUrl(event: EventRow, apiKey: string): Promise<stri
 
   const videosUrl = new URL("https://www.googleapis.com/youtube/v3/videos");
   videosUrl.search = new URLSearchParams({
-    part: "snippet,contentDetails,liveStreamingDetails",
+    part: "snippet,contentDetails",
     id: ids.join(","),
     key: apiKey,
   }).toString();
@@ -166,18 +166,19 @@ async function discoverYoutubeUrl(event: EventRow, apiKey: string): Promise<stri
   const candidates = (Array.isArray(videosPayload.items) ? videosPayload.items : [])
     .map((video: FirstRecord) => {
       const snippet = (video.snippet ?? {}) as FirstRecord;
-      const details = (video.liveStreamingDetails ?? {}) as FirstRecord;
-      const content = (video.contentDetails ?? {}) as FirstRecord;
       const title = text(snippet.title) ?? "";
+      const description = text(snippet.description) ?? "";
       const titleTokens = new Set(meaningfulTokens(title));
-      const overlap = eventTokens.filter(token => titleTokens.has(token)).length;
-      const score = overlap / eventTokens.length;
-      const duration = parseIsoDuration(String(content.duration ?? ""));
-      const isCompletedLivestream = Boolean(details.actualStartTime && details.actualEndTime);
-      return { id: text(video.id), score, duration, isCompletedLivestream };
+      const descriptionTokens = new Set(meaningfulTokens(description));
+      const titleOverlap = eventTokens.filter(token => titleTokens.has(token)).length;
+      const descriptionOverlap = eventTokens.filter(token => descriptionTokens.has(token)).length;
+      // Prefer event names in the title, but allow a match in the description
+      // when a video title is generic (for example, "FTC Match Replay").
+      const score = titleOverlap / eventTokens.length + (descriptionOverlap / eventTokens.length) * 0.25;
+      return { id: text(video.id), score, titleOverlap };
     })
-    .filter((video: { id: string | null; score: number; duration: number; isCompletedLivestream: boolean }) =>
-      video.id && video.isCompletedLivestream && video.duration >= 7200 && video.score >= 0.5)
+    .filter((video: { id: string | null; score: number; titleOverlap: number }) =>
+      video.id && (video.titleOverlap > 0 || video.score >= 0.5))
     .sort((a: { score: number }, b: { score: number }) => b.score - a.score);
 
   return candidates.length ? `https://www.youtube.com/watch?v=${candidates[0].id}` : null;
@@ -252,29 +253,36 @@ Deno.serve(async (req: Request) => {
       if (eventReadError) throw new Error(`Could not load saved event link: ${eventReadError.message}`);
       storedEvent = eventRecord as FirstRecord | null;
 
-      if (storedEvent && !storedEvent.youtube_url) {
+      if (storedEvent) {
         const row = eventRows.find(item => item.event_code === eventCode);
         if (row) {
           try {
-            // Check FIRST's event page on each lookup so its official livestream is
-            // available immediately, even if a previous YouTube search was recent.
-            let youtubeUrl = await discoverFirstEventYoutubeUrl(row);
-
-            // Keep the quota-sensitive YouTube Data API search on a seven-day cooldown.
-            const lastSearched = storedEvent.youtube_last_searched_at ? new Date(String(storedEvent.youtube_last_searched_at)).getTime() : 0;
-            const sevenDays = 7 * 24 * 60 * 60 * 1000;
-            if (!youtubeUrl && youtubeApiKey && (!lastSearched || Date.now() - lastSearched >= sevenDays)) {
-              // Claim the search window before calling YouTube, preventing repeat searches from concurrent team requests.
-              await supabase.from("ftc_events").update({ youtube_last_searched_at: new Date().toISOString() }).eq("event_code", eventCode);
-              youtubeUrl = await discoverYoutubeUrl(row, youtubeApiKey);
-            }
-
-            if (youtubeUrl) {
-              const { error: youtubeUpdateError } = await supabase.from("ftc_events")
-                .update({ youtube_url: youtubeUrl, youtube_verified: false, updated_at: new Date().toISOString() })
-                .eq("event_code", eventCode)
-                .is("youtube_url", null);
-              if (youtubeUpdateError) console.error("Could not save discovered YouTube URL:", youtubeUpdateError.message);
+            // FIRST's event page is authoritative. Check it even when an older
+            // YouTube URL is already saved, and replace that URL if FIRST now
+            // publishes a different official event video.
+            const officialUrl = await discoverFirstEventYoutubeUrl(row);
+            if (officialUrl && officialUrl !== text(storedEvent.youtube_url)) {
+              const { error: officialUpdateError } = await supabase.from("ftc_events")
+                .update({ youtube_url: officialUrl, youtube_verified: true, updated_at: new Date().toISOString() })
+                .eq("season_year", seasonYear).eq("event_code", eventCode);
+              if (officialUpdateError) console.error("Could not save official FIRST event video URL:", officialUpdateError.message);
+            } else if (!text(storedEvent.youtube_url) && !officialUrl && youtubeApiKey) {
+              // Search for event videos, not just long livestreams. Respect the
+              // seven-day cooldown because this search consumes YouTube API quota.
+              const lastSearched = storedEvent.youtube_last_searched_at ? new Date(String(storedEvent.youtube_last_searched_at)).getTime() : 0;
+              const sevenDays = 7 * 24 * 60 * 60 * 1000;
+              if (!lastSearched || Date.now() - lastSearched >= sevenDays) {
+                await supabase.from("ftc_events").update({ youtube_last_searched_at: new Date().toISOString() })
+                  .eq("season_year", seasonYear).eq("event_code", eventCode);
+                const discoveredUrl = await discoverYoutubeUrl(row, youtubeApiKey);
+                if (discoveredUrl) {
+                  const { error: youtubeUpdateError } = await supabase.from("ftc_events")
+                    .update({ youtube_url: discoveredUrl, youtube_verified: false, updated_at: new Date().toISOString() })
+                    .eq("season_year", seasonYear).eq("event_code", eventCode)
+                    .is("youtube_url", null);
+                  if (youtubeUpdateError) console.error("Could not save discovered YouTube URL:", youtubeUpdateError.message);
+                }
+              }
             }
           } catch (youtubeError) {
             console.error("Event video discovery failed:", youtubeError instanceof Error ? youtubeError.message : youtubeError);
@@ -282,7 +290,7 @@ Deno.serve(async (req: Request) => {
         }
         const { data: refreshed } = await supabase.from("ftc_events")
           .select("youtube_url,youtube_verified,youtube_last_searched_at,event_name")
-          .eq("event_code", eventCode).maybeSingle();
+          .eq("season_year", seasonYear).eq("event_code", eventCode).maybeSingle();
         storedEvent = refreshed as FirstRecord | null;
       }
 
