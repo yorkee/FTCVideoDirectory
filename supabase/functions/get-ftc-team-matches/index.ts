@@ -99,7 +99,7 @@ async function discoverYoutubeUrl(event: EventRow, apiKey: string): Promise<stri
   const eventTokens = meaningfulTokens(event.event_name);
   if (eventTokens.length < 2) return null;
 
-  const query = [event.event_name, event.city, "FIRST Tech Challenge livestream"].filter(Boolean).join(" ");
+  const query = [event.event_name, event.city, event.state_prov, "FIRST Tech Challenge livestream"].filter(Boolean).join(" ");
   const searchUrl = new URL("https://www.googleapis.com/youtube/v3/search");
   searchUrl.search = new URLSearchParams({
     part: "snippet",
