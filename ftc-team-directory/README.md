@@ -51,3 +51,14 @@ Static output is generated in `dist/`.
 2. Add a video table and render team videos in the detail view.
 3. Add event/alliance relationships for videos featuring multiple teams.
 4. Deploy the frontend to a static hosting provider.
+
+## Event livestream links
+
+The match-history Edge Function also persists FIRST event metadata and the team-to-event relationship:
+- `public.ftc_events` stores one row per FIRST event, including its optional `youtube_url`.
+- `public.ftc_team_events` maps team numbers to FIRST event codes.
+- Event livestream URLs are shared across every team attending the same event.
+
+To enable automatic YouTube discovery, add a YouTube Data API v3 key to the Supabase Edge Function secrets as `YOUTUBE_API_KEY`. The function searches completed, long videos, then confirms the candidate is a completed livestream at least two hours long and has a reasonable event-name match. Events without a match are retried no more than once every seven days. Automatically discovered URLs are stored with `youtube_verified = false` so they can be reviewed; manually confirmed links can be marked verified in `ftc_events`.
+
+Without `YOUTUBE_API_KEY`, FIRST event/team relationships continue to sync and manually entered YouTube links still display, but automatic discovery is disabled.

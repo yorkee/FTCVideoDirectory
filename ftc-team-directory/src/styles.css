@@ -879,3 +879,34 @@ button {
   .match-alliance { grid-template-columns:auto 1fr auto; }
   .match-alliance small { font-size:8px; }
 }
+
+
+.event-youtube-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  margin: 12px 0 4px;
+  padding: 9px 12px;
+  border: 1px solid rgba(222, 67, 67, 0.28);
+  border-radius: 8px;
+  color: #b83232;
+  background: rgba(222, 67, 67, 0.06);
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-decoration: none;
+  transition: background 150ms ease, border-color 150ms ease;
+}
+.event-youtube-link:hover {
+  background: rgba(222, 67, 67, 0.11);
+  border-color: rgba(222, 67, 67, 0.5);
+}
+.event-youtube-link span {
+  margin-left: 4px;
+  padding: 3px 6px;
+  border-radius: 4px;
+  color: #6b7280;
+  background: rgba(107, 114, 128, 0.1);
+  font-size: 0.62rem;
+  letter-spacing: 0.04em;
+}
