@@ -102,7 +102,7 @@ export default function TeamMatchHistory({ team }: { team: Team }) {
                 <div className="match-label"><strong>{match.description || `${match.tournamentLevel === 'playoff' ? 'Playoff' : 'Qualification'} ${match.matchNumber}`}</strong><small>{match.tournamentLevel === 'playoff' ? 'PLAYOFF' : 'QUALIFICATION'}{match.startTime ? ` · ${new Date(match.startTime).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : ''}</small></div>
                 <div className={`match-alliance red ${thisTeamRed ? 'team-alliance' : ''} `}><span>RED</span><small>{teamList(match.redTeams, team.team_number)}</small><b>{played ? match.scoreRedFinal : '—'}</b>{redWon && <Trophy size={13} />}</div>
                 <div className={`match-alliance blue ${thisTeamBlue ? 'team-alliance' : ''}`}><span>BLUE</span><small>{teamList(match.blueTeams, team.team_number)}</small><b>{played ? match.scoreBlueFinal : '—'}</b>{blueWon && <Trophy size={13} />}</div>
-                {!played && <span className="match-upcoming"><Clock3 size={12} /> UPCOMING</span>}
+                {!played && <span className="match-upcoming"><Clock3 size={12} /> NOT SCORED</span>}
               </div>;
             })}</div>}
         </article>;
