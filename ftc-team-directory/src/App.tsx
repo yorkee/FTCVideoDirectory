@@ -3,6 +3,7 @@ import { ArrowRight, Bot, ChevronRight, CircleHelp, Compass, Database, ExternalL
 import { hasSupabaseConfig, supabase } from './lib/supabase';
 import { demoTeams } from './data/demoTeams';
 import type { Team } from './types';
+import TeamMatchHistory from './TeamMatchHistory';
 
 const seasonYear = 2026;
 const demoMode = import.meta.env.VITE_DEMO_MODE === 'true';
@@ -80,6 +81,6 @@ export default function App() {
       <section className="feature-strip"><div className="feature"><span className="feature-icon"><Search size={18} /></span><div><strong>Find any team</strong><small>Search by name or number</small></div></div><div className="feature"><span className="feature-icon"><Film size={18} /></span><div><strong>Watch the season</strong><small>Competition videos in one place</small></div></div><div className="feature"><span className="feature-icon"><Database size={18} /></span><div><strong>Built to grow</strong><small>Teams and videos, worldwide</small></div></div></section>
     </main>
     <footer className="footer"><span>FTC DIRECTORY <i>·</i> COMMUNITY BUILT</span><span>FIRST® Tech Challenge is a program of FIRST. This is an independent community project.</span></footer>
-    {selectedTeam && <div className="modal-backdrop" onClick={() => setSelectedTeam(null)}><div className="team-modal" role="dialog" aria-modal="true" aria-labelledby="modal-title" onClick={e => e.stopPropagation()}><button className="modal-close" onClick={() => setSelectedTeam(null)} aria-label="Close"><X size={19} /></button><span className="modal-kicker">FTC TEAM · 2026–2027</span><div className="modal-number">#{selectedTeam.team_number}</div><h2 id="modal-title">{selectedTeam.team_name || `FTC Team ${selectedTeam.team_number}`}</h2><div className="modal-divider" /><div className="modal-empty"><Film size={23} /><strong>Videos are coming soon</strong><p>Competition videos for this team will appear here as the directory grows.</p></div><button className="modal-done" onClick={() => setSelectedTeam(null)}>Back to search</button></div></div>}
+    {selectedTeam && <div className="modal-backdrop" onClick={() => setSelectedTeam(null)}><div className="team-modal" role="dialog" aria-modal="true" aria-labelledby="modal-title" onClick={e => e.stopPropagation()}><button className="modal-close" onClick={() => setSelectedTeam(null)} aria-label="Close"><X size={19} /></button><span className="modal-kicker">FTC TEAM · 2026–2027</span><div className="modal-number">#{selectedTeam.team_number}</div><h2 id="modal-title">{selectedTeam.team_name || `FTC Team ${selectedTeam.team_number}`}</h2><div className="modal-divider" /><TeamMatchHistory team={selectedTeam} /><button className="modal-done" onClick={() => setSelectedTeam(null)}>Back to search</button></div></div>}
   </div>;
 }
