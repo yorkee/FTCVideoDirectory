@@ -63,10 +63,10 @@ function matchMergeKey(match: FirstRecord): string {
     .sort()
     .join(",") : "";
   const description = text(match.description)?.toLowerCase() ?? "";
-  // Match numbers can repeat in playoff brackets. Include the round/description and
-  // alliance assignments so distinct bracket matches are not overwritten.
-  const fallback = `${String(match.field ?? "")}:${String(match.startTime ?? "")}`;
-  return [String(match.matchNumber ?? ""), description, teams || fallback].join("|");
+  // Match numbers can repeat in playoff brackets. Alliance assignments distinguish
+  // those matches while still matching the scheduled row to its result row.
+  const fallback = `${description}:${String(match.field ?? "")}:${String(match.startTime ?? "")}`;
+  return [String(match.matchNumber ?? ""), teams || fallback].join("|");
 }
 function mergeScheduleAndResults(schedulePayload: FirstRecord, resultPayload: FirstRecord, level: string): FirstRecord[] {
   const scheduled = Array.isArray(schedulePayload.schedule) ? schedulePayload.schedule as FirstRecord[] : [];
