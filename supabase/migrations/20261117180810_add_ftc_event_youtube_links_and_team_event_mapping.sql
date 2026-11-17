@@ -14,7 +14,7 @@ create table if not exists public.ftc_events (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   constraint ftc_events_youtube_url_check
-    check (youtube_url is null or youtube_url ~* '^https?://(www\\.)?(youtube\\.com|youtu\\.be)/')
+    check (youtube_url is null or youtube_url ~* '^https?://(www\.)?(youtube\.com|youtu\.be)/')
 );
 
 create table if not exists public.ftc_team_events (
