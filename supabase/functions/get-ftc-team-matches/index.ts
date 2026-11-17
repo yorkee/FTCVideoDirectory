@@ -88,7 +88,6 @@ Deno.serve(async (req: Request) => {
         events.push({ event, matches: [] });
         continue;
       }
-      const eventPath = `${seasonYear}/${encodeURIComponent(eventCode)}`;
       const levels = ["qual", "playoff"];
       const matchesForEvent: FirstRecord[] = [];
       for (const level of levels) {
