@@ -94,8 +94,8 @@ export default function TeamMatchHistory({ team }: { team: Team }) {
           {!matches.length ? <p className="event-no-matches">No published matches for this team at this event yet.</p> :
             <div className="match-list">{matches.map((match, index) => {
               const played = isPlayed(match);
-              const redWon = played && match.scoreRedFinal > match.scoreBlueFinal;
-              const blueWon = played && match.scoreBlueFinal > match.scoreRedFinal;
+              const redWon = match.scoreRedFinal !== null && match.scoreBlueFinal !== null && match.scoreRedFinal > match.scoreBlueFinal;
+              const blueWon = match.scoreRedFinal !== null && match.scoreBlueFinal !== null && match.scoreBlueFinal > match.scoreRedFinal;
               const thisTeamRed = match.redTeams.some(item => Number(item.teamNumber ?? item.team) === team.team_number);
               const thisTeamBlue = match.blueTeams.some(item => Number(item.teamNumber ?? item.team) === team.team_number);
               return <div className="match-row" key={`${match.tournamentLevel}-${match.matchNumber}-${index}`}>
