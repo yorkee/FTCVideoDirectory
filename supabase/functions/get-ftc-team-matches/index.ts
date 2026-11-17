@@ -1,4 +1,5 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { createClient } from "npm:@supabase/supabase-js@2";
 
 const FIRST_BASE_URL = "https://ftc-api.firstinspires.org/v2.0";
 const ALLOWED_SEASONS = new Set([2026]);
@@ -9,12 +10,26 @@ const corsHeaders = {
 };
 
 type FirstRecord = Record<string, unknown>;
+type EventRow = {
+  event_code: string;
+  season_year: number;
+  event_name: string;
+  date_start: string | null;
+  date_end: string | null;
+  venue: string | null;
+  city: string | null;
+  state_prov: string | null;
+  country: string | null;
+};
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
+}
+function text(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 function numberOrNull(value: unknown): number | null {
   if (value === null || value === undefined || value === "") return null;
@@ -55,6 +70,83 @@ function mergeScheduleAndResults(schedulePayload: FirstRecord, resultPayload: Fi
   }
   return [...merged.values()];
 }
+function toEventRow(event: FirstRecord, seasonYear: number): EventRow | null {
+  const eventCode = text(event.code);
+  const eventName = text(event.name);
+  if (!eventCode || !eventName) return null;
+  return {
+    event_code: eventCode,
+    season_year: seasonYear,
+    event_name: eventName,
+    date_start: text(event.dateStart),
+    date_end: text(event.dateEnd),
+    venue: text(event.venue),
+    city: text(event.city),
+    state_prov: text(event.stateprov),
+    country: text(event.country),
+  };
+}
+function parseIsoDuration(value: string): number {
+  const match = value.match(/^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+(?:\.\d+)?)S)?$/);
+  if (!match) return 0;
+  return Number(match[1] ?? 0) * 3600 + Number(match[2] ?? 0) * 60 + Number(match[3] ?? 0);
+}
+function meaningfulTokens(value: string): string[] {
+  const ignored = new Set(["first", "tech", "challenge", "ftc", "robotics", "robot", "2026", "2027", "2026-2027", "event", "qualifier", "qualification", "tournament", "the", "and"]);
+  return [...new Set(value.toLowerCase().replace(/[^a-z0-9 ]/g, " ").split(/\s+/).filter(token => token.length > 2 && !ignored.has(token)))];
+}
+async function discoverYoutubeUrl(event: EventRow, apiKey: string): Promise<string | null> {
+  const eventTokens = meaningfulTokens(event.event_name);
+  if (eventTokens.length < 2) return null;
+
+  const query = [event.event_name, event.city, "FIRST Tech Challenge livestream"].filter(Boolean).join(" ");
+  const searchUrl = new URL("https://www.googleapis.com/youtube/v3/search");
+  searchUrl.search = new URLSearchParams({
+    part: "snippet",
+    type: "video",
+    eventType: "completed",
+    videoDuration: "long",
+    maxResults: "10",
+    q: query,
+    key: apiKey,
+  }).toString();
+
+  const searchResponse = await fetch(searchUrl);
+  if (!searchResponse.ok) throw new Error(`YouTube search returned HTTP ${searchResponse.status}.`);
+  const searchPayload = await searchResponse.json();
+  const ids = (Array.isArray(searchPayload.items) ? searchPayload.items : [])
+    .map((item: FirstRecord) => text((item.id as FirstRecord | undefined)?.videoId))
+    .filter((id: string | null): id is string => Boolean(id));
+  if (!ids.length) return null;
+
+  const videosUrl = new URL("https://www.googleapis.com/youtube/v3/videos");
+  videosUrl.search = new URLSearchParams({
+    part: "snippet,contentDetails,liveStreamingDetails",
+    id: ids.join(","),
+    key: apiKey,
+  }).toString();
+  const videosResponse = await fetch(videosUrl);
+  if (!videosResponse.ok) throw new Error(`YouTube video lookup returned HTTP ${videosResponse.status}.`);
+  const videosPayload = await videosResponse.json();
+  const candidates = (Array.isArray(videosPayload.items) ? videosPayload.items : [])
+    .map((video: FirstRecord) => {
+      const snippet = (video.snippet ?? {}) as FirstRecord;
+      const details = (video.liveStreamingDetails ?? {}) as FirstRecord;
+      const content = (video.contentDetails ?? {}) as FirstRecord;
+      const title = text(snippet.title) ?? "";
+      const titleTokens = new Set(meaningfulTokens(title));
+      const overlap = eventTokens.filter(token => titleTokens.has(token)).length;
+      const score = overlap / eventTokens.length;
+      const duration = parseIsoDuration(String(content.duration ?? ""));
+      const isCompletedLivestream = Boolean(details.actualStartTime && details.actualEndTime);
+      return { id: text(video.id), score, duration, isCompletedLivestream };
+    })
+    .filter((video: { id: string | null; score: number; duration: number; isCompletedLivestream: boolean }) =>
+      video.id && video.isCompletedLivestream && video.duration >= 7200 && video.score >= 0.5)
+    .sort((a: { score: number }, b: { score: number }) => b.score - a.score);
+
+  return candidates.length ? `https://www.youtube.com/watch?v=${candidates[0].id}` : null;
+}
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -63,7 +155,15 @@ Deno.serve(async (req: Request) => {
   try {
     const username = Deno.env.get("FIRST_API_USERNAME");
     const token = Deno.env.get("FIRST_API_TOKEN");
+    const supabaseUrl = Deno.env.get("SUPABASE_URL");
+    const secretKeysRaw = Deno.env.get("SUPABASE_SECRET_KEYS");
     if (!username || !token) throw new Error("FIRST API credentials are not configured on this Edge Function.");
+    if (!supabaseUrl || !secretKeysRaw) throw new Error("Supabase server environment configuration is missing.");
+
+    const secretKeys = JSON.parse(secretKeysRaw);
+    const serviceKey = secretKeys["default"];
+    if (!serviceKey) throw new Error("Default Supabase secret key is unavailable to this function.");
+    const supabase = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } });
 
     const body = await req.json();
     const teamNumber = Number(body.teamNumber);
@@ -81,13 +181,76 @@ Deno.serve(async (req: Request) => {
     if (!Array.isArray(eventPayload.events)) throw new Error("FIRST returned an unexpected events response.");
 
     const events: Array<{ event: FirstRecord; matches: ReturnType<typeof normalizeMatch>[] }> = [];
-    // Process one event at a time to keep FIRST API request concurrency bounded.
+    const eventRows = (eventPayload.events as FirstRecord[])
+      .map(event => toEventRow(event, seasonYear))
+      .filter((event): event is EventRow => Boolean(event));
+
+    if (eventRows.length) {
+      const { error: eventUpsertError } = await supabase.from("ftc_events").upsert(eventRows, { onConflict: "event_code" });
+      if (eventUpsertError) throw new Error(`Could not save FIRST events: ${eventUpsertError.message}`);
+
+      const mappings = eventRows.map(event => ({ team_number: teamNumber, event_code: event.event_code }));
+      const { error: mappingError } = await supabase.from("ftc_team_events").upsert(mappings, {
+        onConflict: "team_number,event_code",
+        ignoreDuplicates: true,
+      });
+      if (mappingError) throw new Error(`Could not save team/event relationships: ${mappingError.message}`);
+    }
+
+    const youtubeApiKey = Deno.env.get("YOUTUBE_API_KEY");
+    const enrichedEvents: Array<{ event: FirstRecord; matches: ReturnType<typeof normalizeMatch>[] }> = [];
+
+    // Fetch the team's schedule/results and attach the persisted event record.
     for (const event of eventPayload.events as FirstRecord[]) {
       const eventCode = String(event.code ?? "");
       if (!eventCode) {
-        events.push({ event, matches: [] });
+        enrichedEvents.push({ event, matches: [] });
         continue;
       }
+
+      let storedEvent: FirstRecord | null = null;
+      const { data: eventRecord, error: eventReadError } = await supabase
+        .from("ftc_events")
+        .select("youtube_url,youtube_verified,youtube_last_searched_at,event_name")
+        .eq("event_code", eventCode)
+        .maybeSingle();
+      if (eventReadError) throw new Error(`Could not load saved event link: ${eventReadError.message}`);
+      storedEvent = eventRecord as FirstRecord | null;
+
+      if (youtubeApiKey && storedEvent && !storedEvent.youtube_url) {
+        const lastSearched = storedEvent.youtube_last_searched_at ? new Date(String(storedEvent.youtube_last_searched_at)).getTime() : 0;
+        const sevenDays = 7 * 24 * 60 * 60 * 1000;
+        if (!lastSearched || Date.now() - lastSearched >= sevenDays) {
+          // Claim the search window before calling YouTube, preventing repeat searches from concurrent team requests.
+          await supabase.from("ftc_events").update({ youtube_last_searched_at: new Date().toISOString() }).eq("event_code", eventCode);
+          const row = eventRows.find(item => item.event_code === eventCode);
+          if (row) {
+            try {
+              const youtubeUrl = await discoverYoutubeUrl(row, youtubeApiKey);
+              if (youtubeUrl) {
+                const { error: youtubeUpdateError } = await supabase.from("ftc_events")
+                  .update({ youtube_url: youtubeUrl, youtube_verified: false, updated_at: new Date().toISOString() })
+                  .eq("event_code", eventCode)
+                  .is("youtube_url", null);
+                if (youtubeUpdateError) console.error("Could not save discovered YouTube URL:", youtubeUpdateError.message);
+              }
+            } catch (youtubeError) {
+              console.error("YouTube discovery failed:", youtubeError instanceof Error ? youtubeError.message : youtubeError);
+            }
+          }
+          const { data: refreshed } = await supabase.from("ftc_events")
+            .select("youtube_url,youtube_verified,youtube_last_searched_at,event_name")
+            .eq("event_code", eventCode).maybeSingle();
+          storedEvent = refreshed as FirstRecord | null;
+        }
+      }
+
+      const eventWithVideo = {
+        ...event,
+        youtubeUrl: text(storedEvent?.youtube_url),
+        youtubeVerified: Boolean(storedEvent?.youtube_verified),
+      };
+
       const levels = ["qual", "playoff"];
       const matchesForEvent: FirstRecord[] = [];
       for (const level of levels) {
@@ -102,10 +265,10 @@ Deno.serve(async (req: Request) => {
         .sort((a, b) => a.tournamentLevel === b.tournamentLevel
           ? a.matchNumber - b.matchNumber
           : a.tournamentLevel === "qual" ? -1 : 1);
-      events.push({ event, matches });
+      enrichedEvents.push({ event: eventWithVideo, matches });
     }
 
-    return json({ success: true, season: seasonYear, teamNumber, events });
+    return json({ success: true, season: seasonYear, teamNumber, events: enrichedEvents });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown FIRST API error.";
     console.error("FTC team match history failed:", message);
