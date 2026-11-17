@@ -42,16 +42,16 @@ async function firstGet(path: string, headers: HeadersInit) {
   }
   return await response.json();
 }
-function mergeScheduleAndResults(schedulePayload: FirstRecord, resultPayload: FirstRecord): FirstRecord[] {
+function mergeScheduleAndResults(schedulePayload: FirstRecord, resultPayload: FirstRecord, level: string): FirstRecord[] {
   const scheduled = Array.isArray(schedulePayload.schedule) ? schedulePayload.schedule as FirstRecord[] : [];
   const results = Array.isArray(resultPayload.matches) ? resultPayload.matches as FirstRecord[] : [];
   const merged = new Map<string, FirstRecord>();
   for (const match of scheduled) {
-    merged.set(String(match.matchNumber ?? ""), match);
+    merged.set(String(match.matchNumber ?? ""), { ...match, tournamentLevel: match.tournamentLevel ?? level });
   }
   for (const match of results) {
     const key = String(match.matchNumber ?? "");
-    merged.set(key, { ...(merged.get(key) ?? {}), ...match });
+    merged.set(key, { ...(merged.get(key) ?? {}), ...match, tournamentLevel: match.tournamentLevel ?? level });
   }
   return [...merged.values()];
 }
@@ -95,7 +95,7 @@ Deno.serve(async (req: Request) => {
           firstGet(`${seasonYear}/schedule/${encodeURIComponent(eventCode)}?tournamentLevel=${level}&teamNumber=${teamNumber}`, headers),
           firstGet(`${seasonYear}/matches/${encodeURIComponent(eventCode)}?tournamentLevel=${level}&teamNumber=${teamNumber}`, headers),
         ]);
-        matchesForEvent.push(...mergeScheduleAndResults(schedulePayload, resultPayload));
+        matchesForEvent.push(...mergeScheduleAndResults(schedulePayload, resultPayload, level));
       }
       const matches = matchesForEvent.map(match => normalizeMatch(match))
         .filter(match => [...match.redTeams, ...match.blueTeams].some(team => Number(team.teamNumber) === teamNumber))
