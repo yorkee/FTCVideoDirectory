@@ -8,7 +8,10 @@ const seasonYear = 2026;
 const demoMode = import.meta.env.VITE_DEMO_MODE === 'true';
 
 export default function App() {
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('team_number')?.trim() || params.get('team_name')?.trim() || '';
+  });
   const [teams, setTeams] = useState<Team[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -26,9 +29,23 @@ export default function App() {
           request = isNumber ? request.eq('team_number', Number(term)) : request.ilike('team_name', `%${term}%`);
           const { data, error: queryError } = await request.order('team_number', { ascending: true });
           if (queryError) throw queryError;
-          setTeams((data ?? []) as Team[]);
+          const matches = (data ?? []) as Team[];
+          setTeams(matches);
+          const exactMatch = matches.length === 1 && (
+            isNumber
+              ? matches[0].team_number === Number(term)
+              : (matches[0].team_name ?? '').trim().toLowerCase() === term.toLowerCase()
+          );
+          setSelectedTeam(exactMatch ? matches[0] : null);
         } else if (demoMode) {
-          setTeams(demoTeams.filter(team => isNumber ? String(team.team_number).includes(term) : (team.team_name ?? '').toLowerCase().includes(term.toLowerCase())));
+          const matches = demoTeams.filter(team => isNumber ? String(team.team_number).includes(term) : (team.team_name ?? '').toLowerCase().includes(term.toLowerCase()));
+          setTeams(matches);
+          const exactMatch = matches.length === 1 && (
+            isNumber
+              ? matches[0].team_number === Number(term)
+              : (matches[0].team_name ?? '').trim().toLowerCase() === term.toLowerCase()
+          );
+          setSelectedTeam(exactMatch ? matches[0] : null);
         } else setTeams([]);
       } catch (e) { setTeams([]); setError(e instanceof Error ? e.message : 'Search failed. Please try again.'); }
       finally { setLoading(false); }
