@@ -253,34 +253,37 @@ Deno.serve(async (req: Request) => {
       storedEvent = eventRecord as FirstRecord | null;
 
       if (storedEvent && !storedEvent.youtube_url) {
-        const lastSearched = storedEvent.youtube_last_searched_at ? new Date(String(storedEvent.youtube_last_searched_at)).getTime() : 0;
-        const sevenDays = 7 * 24 * 60 * 60 * 1000;
-        if (!lastSearched || Date.now() - lastSearched >= sevenDays) {
-          // Claim the search window before checking FIRST and YouTube, preventing repeat requests from concurrent team lookups.
-          await supabase.from("ftc_events").update({ youtube_last_searched_at: new Date().toISOString() }).eq("event_code", eventCode);
-          const row = eventRows.find(item => item.event_code === eventCode);
-          if (row) {
-            try {
-              // FIRST's event page is the authoritative source for its posted livestream.
-              // Use YouTube search as a fallback when FIRST has not published a link.
-              const youtubeUrl = await discoverFirstEventYoutubeUrl(row) ??
-                (youtubeApiKey ? await discoverYoutubeUrl(row, youtubeApiKey) : null);
-              if (youtubeUrl) {
-                const { error: youtubeUpdateError } = await supabase.from("ftc_events")
-                  .update({ youtube_url: youtubeUrl, youtube_verified: false, updated_at: new Date().toISOString() })
-                  .eq("event_code", eventCode)
-                  .is("youtube_url", null);
-                if (youtubeUpdateError) console.error("Could not save discovered YouTube URL:", youtubeUpdateError.message);
-              }
-            } catch (youtubeError) {
-              console.error("Event video discovery failed:", youtubeError instanceof Error ? youtubeError.message : youtubeError);
+        const row = eventRows.find(item => item.event_code === eventCode);
+        if (row) {
+          try {
+            // Check FIRST's event page on each lookup so its official livestream is
+            // available immediately, even if a previous YouTube search was recent.
+            let youtubeUrl = await discoverFirstEventYoutubeUrl(row);
+
+            // Keep the quota-sensitive YouTube Data API search on a seven-day cooldown.
+            const lastSearched = storedEvent.youtube_last_searched_at ? new Date(String(storedEvent.youtube_last_searched_at)).getTime() : 0;
+            const sevenDays = 7 * 24 * 60 * 60 * 1000;
+            if (!youtubeUrl && youtubeApiKey && (!lastSearched || Date.now() - lastSearched >= sevenDays)) {
+              // Claim the search window before calling YouTube, preventing repeat searches from concurrent team requests.
+              await supabase.from("ftc_events").update({ youtube_last_searched_at: new Date().toISOString() }).eq("event_code", eventCode);
+              youtubeUrl = await discoverYoutubeUrl(row, youtubeApiKey);
             }
+
+            if (youtubeUrl) {
+              const { error: youtubeUpdateError } = await supabase.from("ftc_events")
+                .update({ youtube_url: youtubeUrl, youtube_verified: false, updated_at: new Date().toISOString() })
+                .eq("event_code", eventCode)
+                .is("youtube_url", null);
+              if (youtubeUpdateError) console.error("Could not save discovered YouTube URL:", youtubeUpdateError.message);
+            }
+          } catch (youtubeError) {
+            console.error("Event video discovery failed:", youtubeError instanceof Error ? youtubeError.message : youtubeError);
           }
-          const { data: refreshed } = await supabase.from("ftc_events")
-            .select("youtube_url,youtube_verified,youtube_last_searched_at,event_name")
-            .eq("event_code", eventCode).maybeSingle();
-          storedEvent = refreshed as FirstRecord | null;
         }
+        const { data: refreshed } = await supabase.from("ftc_events")
+          .select("youtube_url,youtube_verified,youtube_last_searched_at,event_name")
+          .eq("event_code", eventCode).maybeSingle();
+        storedEvent = refreshed as FirstRecord | null;
       }
 
       const eventWithVideo = {
