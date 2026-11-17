@@ -18,13 +18,11 @@ function json(body: unknown, status = 200) {
 }
 function numberOrNull(value: unknown): number | null {
   if (value === null || value === undefined || value === "") return null;
-  const valueNumber = Number(value);
-  return Number.isFinite(valueNumber) ? valueNumber : null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
 }
 function normalizeMatch(match: FirstRecord) {
   const teams = Array.isArray(match.teams) ? match.teams as FirstRecord[] : [];
-  const redTeams = teams.filter(team => String(team.station ?? "").toLowerCase().startsWith("red"));
-  const blueTeams = teams.filter(team => String(team.station ?? "").toLowerCase().startsWith("blue"));
   return {
     matchNumber: Number(match.matchNumber ?? 0),
     description: typeof match.description === "string" ? match.description : "",
@@ -32,8 +30,8 @@ function normalizeMatch(match: FirstRecord) {
     startTime: typeof match.startTime === "string" ? match.startTime : null,
     scoreRedFinal: numberOrNull(match.scoreRedFinal),
     scoreBlueFinal: numberOrNull(match.scoreBlueFinal),
-    redTeams,
-    blueTeams,
+    redTeams: teams.filter(team => String(team.station ?? "").toLowerCase().startsWith("red")),
+    blueTeams: teams.filter(team => String(team.station ?? "").toLowerCase().startsWith("blue")),
   };
 }
 async function firstGet(path: string, headers: HeadersInit) {
@@ -43,6 +41,19 @@ async function firstGet(path: string, headers: HeadersInit) {
     throw new Error(`FIRST API returned HTTP ${response.status}${retryAfter ? ` (Retry-After: ${retryAfter})` : ""}.`);
   }
   return await response.json();
+}
+function mergeScheduleAndResults(schedulePayload: FirstRecord, resultPayload: FirstRecord): FirstRecord[] {
+  const scheduled = Array.isArray(schedulePayload.schedule) ? schedulePayload.schedule as FirstRecord[] : [];
+  const results = Array.isArray(resultPayload.matches) ? resultPayload.matches as FirstRecord[] : [];
+  const merged = new Map<string, FirstRecord>();
+  for (const match of scheduled) {
+    merged.set(String(match.matchNumber ?? ""), match);
+  }
+  for (const match of results) {
+    const key = String(match.matchNumber ?? "");
+    merged.set(key, { ...(merged.get(key) ?? {}), ...match });
+  }
+  return [...merged.values()];
 }
 
 Deno.serve(async (req: Request) => {
@@ -69,23 +80,31 @@ Deno.serve(async (req: Request) => {
     const eventPayload = await firstGet(`${seasonYear}/events?teamNumber=${teamNumber}`, headers);
     if (!Array.isArray(eventPayload.events)) throw new Error("FIRST returned an unexpected events response.");
 
-    const events = await Promise.all((eventPayload.events as FirstRecord[]).map(async event => {
+    const events: Array<{ event: FirstRecord; matches: ReturnType<typeof normalizeMatch>[] }> = [];
+    // Process one event at a time to keep FIRST API request concurrency bounded.
+    for (const event of eventPayload.events as FirstRecord[]) {
       const eventCode = String(event.code ?? "");
-      if (!eventCode) return { event, matches: [] };
-      const [qualPayload, playoffPayload] = await Promise.all([
-        firstGet(`${seasonYear}/schedule/${encodeURIComponent(eventCode)}?tournamentLevel=qual&teamNumber=${teamNumber}`, headers),
-        firstGet(`${seasonYear}/schedule/${encodeURIComponent(eventCode)}?tournamentLevel=playoff&teamNumber=${teamNumber}`, headers),
-      ]);
-      const matches = [
-        ...(Array.isArray(qualPayload.schedule) ? qualPayload.schedule : []),
-        ...(Array.isArray(playoffPayload.schedule) ? playoffPayload.schedule : []),
-      ].map((match: FirstRecord) => normalizeMatch(match))
-        .filter((match: ReturnType<typeof normalizeMatch>) =>
-          [...match.redTeams, ...match.blueTeams].some(team => Number(team.teamNumber) === teamNumber))
-        .sort((a: ReturnType<typeof normalizeMatch>, b: ReturnType<typeof normalizeMatch>) =>
-          (a.tournamentLevel === b.tournamentLevel ? a.matchNumber - b.matchNumber : a.tournamentLevel === "qual" ? -1 : 1));
-      return { event, matches };
-    }));
+      if (!eventCode) {
+        events.push({ event, matches: [] });
+        continue;
+      }
+      const eventPath = `${seasonYear}/${encodeURIComponent(eventCode)}`;
+      const levels = ["qual", "playoff"];
+      const matchesForEvent: FirstRecord[] = [];
+      for (const level of levels) {
+        const [schedulePayload, resultPayload] = await Promise.all([
+          firstGet(`${seasonYear}/schedule/${encodeURIComponent(eventCode)}?tournamentLevel=${level}&teamNumber=${teamNumber}`, headers),
+          firstGet(`${seasonYear}/matches/${encodeURIComponent(eventCode)}?tournamentLevel=${level}&teamNumber=${teamNumber}`, headers),
+        ]);
+        matchesForEvent.push(...mergeScheduleAndResults(schedulePayload, resultPayload));
+      }
+      const matches = matchesForEvent.map(match => normalizeMatch(match))
+        .filter(match => [...match.redTeams, ...match.blueTeams].some(team => Number(team.teamNumber) === teamNumber))
+        .sort((a, b) => a.tournamentLevel === b.tournamentLevel
+          ? a.matchNumber - b.matchNumber
+          : a.tournamentLevel === "qual" ? -1 : 1);
+      events.push({ event, matches });
+    }
 
     return json({ success: true, season: seasonYear, teamNumber, events });
   } catch (error) {
