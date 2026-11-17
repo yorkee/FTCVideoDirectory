@@ -4,7 +4,9 @@ const FIRST_BASE_URL = "https://ftc-api.firstinspires.org/v2.0";
 const ALLOWED_SEASONS = new Set([2026]);
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-api-version, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
+  "Access-Control-Max-Age": "86400",
+  "Vary": "Origin",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
