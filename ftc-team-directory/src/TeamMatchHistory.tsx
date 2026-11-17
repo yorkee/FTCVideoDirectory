@@ -36,6 +36,16 @@ function teamList(teams: FirstRecord[], teamNumber: number): string {
 function isPlayed(match: Match): boolean {
   return match.scoreRedFinal !== null && match.scoreBlueFinal !== null;
 }
+function isYoutubePlaylist(value: string): boolean {
+  try {
+    const url = new URL(value);
+    const host = url.hostname.toLowerCase();
+    const isYoutube = host === 'youtube.com' || host.endsWith('.youtube.com') || host === 'youtu.be';
+    return isYoutube && (url.pathname === '/playlist' || (!url.searchParams.has('v') && url.searchParams.has('list')));
+  } catch {
+    return false;
+  }
+}
 
 export default function TeamMatchHistory({ team }: { team: Team }) {
   const [history, setHistory] = useState<HistoryResponse | null>(null);
@@ -91,7 +101,8 @@ export default function TeamMatchHistory({ team }: { team: Team }) {
             {dateRange(event) && <span><CalendarDays size={13} />{dateRange(event)}</span>}
             {location && <span><MapPin size={13} />{location}</span>}
           </div>
-          {event.youtubeUrl && <a className="event-youtube-link" href={event.youtubeUrl} target="_blank" rel="noreferrer"><Youtube size={16} /> Watch event livestream <ExternalLink size={12} />{event.youtubeVerified ? <span>VERIFIED</span> : <span>LIKELY MATCH</span>}</a>}\n          {!matches.length ? <p className="event-no-matches">No published matches for this team at this event yet.</p> :
+          {event.youtubeUrl && <a className="event-youtube-link" href={event.youtubeUrl} target="_blank" rel="noreferrer"><Youtube size={16} /> {isYoutubePlaylist(event.youtubeUrl) ? 'View event video playlist' : 'Watch event livestream'} <ExternalLink size={12} />{isYoutubePlaylist(event.youtubeUrl) ? <span>PLAYLIST</span> : event.youtubeVerified ? <span>VERIFIED</span> : <span>LIKELY MATCH</span>}</a>}
+          {!matches.length ? <p className="event-no-matches">No published matches for this team at this event yet.</p> :
             <div className="match-list">{matches.map((match, index) => {
               const played = isPlayed(match);
               const redWon = match.scoreRedFinal !== null && match.scoreBlueFinal !== null && match.scoreRedFinal > match.scoreBlueFinal;
