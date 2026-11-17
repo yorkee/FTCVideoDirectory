@@ -98,6 +98,11 @@ function toEventRow(event: FirstRecord, seasonYear: number): EventRow | null {
     country: text(event.country),
   };
 }
+function parseIsoDuration(value: string): number {
+  const match = value.match(/^PT(?:(\\d+)H)?(?:(\\d+)M)?(?:(\\d+(?:\\.\\d+)?)S)?$/);
+  if (!match) return 0;
+  return Number(match[1] ?? 0) * 3600 + Number(match[2] ?? 0) * 60 + Number(match[3] ?? 0);
+}
 function meaningfulTokens(value: string): string[] {
   const ignored = new Set(["first", "tech", "challenge", "ftc", "robotics", "robot", "2026", "2027", "2026-2027", "event", "qualifier", "qualification", "tournament", "the", "and"]);
   return [...new Set(value.toLowerCase().replace(/[^a-z0-9 ]/g, " ").split(/\s+/).filter(token => token.length > 2 && !ignored.has(token)))];
