@@ -101,7 +101,7 @@ export default function TeamMatchHistory({ team }: { team: Team }) {
             {dateRange(event) && <span><CalendarDays size={13} />{dateRange(event)}</span>}
             {location && <span><MapPin size={13} />{location}</span>}
           </div>
-          {event.youtubeUrl && <a className="event-youtube-link" href={event.youtubeUrl} target="_blank" rel="noreferrer"><Youtube size={16} /> {isYoutubePlaylist(event.youtubeUrl) ? 'View event video playlist' : 'Watch event livestream'} <ExternalLink size={12} />{isYoutubePlaylist(event.youtubeUrl) ? <span>PLAYLIST</span> : event.youtubeVerified ? <span>VERIFIED</span> : <span>LIKELY MATCH</span>}</a>}
+          {event.youtubeUrl && <a className="event-youtube-link" href={event.youtubeUrl} target="_blank" rel="noreferrer"><Youtube size={16} /> {isYoutubePlaylist(event.youtubeUrl) ? 'View event video playlist' : 'Watch event video'} <ExternalLink size={12} />{isYoutubePlaylist(event.youtubeUrl) ? <span>PLAYLIST</span> : event.youtubeVerified ? <span>VERIFIED</span> : <span>LIKELY MATCH</span>}</a>}
           {!matches.length ? <p className="event-no-matches">No published matches for this team at this event yet.</p> :
             <div className="match-list">{matches.map((match, index) => {
               const played = isPlayed(match);
