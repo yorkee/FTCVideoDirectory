@@ -1,0 +1,2 @@
+[functions.get-ftc-team-matches]
+verify_jwt = false
