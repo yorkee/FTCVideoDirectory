@@ -57,15 +57,27 @@ async function firstGet(path: string, headers: HeadersInit) {
   }
   return await response.json();
 }
+function matchMergeKey(match: FirstRecord): string {
+  const teams = Array.isArray(match.teams) ? (match.teams as FirstRecord[])
+    .map(team => `${String(team.station ?? "").toLowerCase()}:${String(team.teamNumber ?? team.team ?? "")}`)
+    .sort()
+    .join(",") : "";
+  const description = text(match.description)?.toLowerCase() ?? "";
+  // Match numbers can repeat in playoff brackets. Include the round/description and
+  // alliance assignments so distinct bracket matches are not overwritten.
+  const fallback = `${String(match.field ?? "")}:${String(match.startTime ?? "")}`;
+  return [String(match.matchNumber ?? ""), description, teams || fallback].join("|");
+}
 function mergeScheduleAndResults(schedulePayload: FirstRecord, resultPayload: FirstRecord, level: string): FirstRecord[] {
   const scheduled = Array.isArray(schedulePayload.schedule) ? schedulePayload.schedule as FirstRecord[] : [];
   const results = Array.isArray(resultPayload.matches) ? resultPayload.matches as FirstRecord[] : [];
   const merged = new Map<string, FirstRecord>();
   for (const match of scheduled) {
-    merged.set(String(match.matchNumber ?? ""), { ...match, tournamentLevel: match.tournamentLevel ?? level });
+    const key = matchMergeKey(match);
+    merged.set(key, { ...match, tournamentLevel: match.tournamentLevel ?? level });
   }
   for (const match of results) {
-    const key = String(match.matchNumber ?? "");
+    const key = matchMergeKey(match);
     merged.set(key, { ...(merged.get(key) ?? {}), ...match, tournamentLevel: match.tournamentLevel ?? level });
   }
   return [...merged.values()];
