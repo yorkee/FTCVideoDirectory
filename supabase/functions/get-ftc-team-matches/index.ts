@@ -186,12 +186,12 @@ Deno.serve(async (req: Request) => {
       .filter((event): event is EventRow => Boolean(event));
 
     if (eventRows.length) {
-      const { error: eventUpsertError } = await supabase.from("ftc_events").upsert(eventRows, { onConflict: "event_code" });
+      const { error: eventUpsertError } = await supabase.from("ftc_events").upsert(eventRows, { onConflict: "season_year,event_code" });
       if (eventUpsertError) throw new Error(`Could not save FIRST events: ${eventUpsertError.message}`);
 
-      const mappings = eventRows.map(event => ({ team_number: teamNumber, event_code: event.event_code }));
+      const mappings = eventRows.map(event => ({ team_number: teamNumber, season_year: seasonYear, event_code: event.event_code }));
       const { error: mappingError } = await supabase.from("ftc_team_events").upsert(mappings, {
-        onConflict: "team_number,event_code",
+        onConflict: "team_number,season_year,event_code",
         ignoreDuplicates: true,
       });
       if (mappingError) throw new Error(`Could not save team/event relationships: ${mappingError.message}`);
@@ -212,7 +212,7 @@ Deno.serve(async (req: Request) => {
       const { data: eventRecord, error: eventReadError } = await supabase
         .from("ftc_events")
         .select("youtube_url,youtube_verified,youtube_last_searched_at,event_name")
-        .eq("event_code", eventCode)
+        .eq("season_year", seasonYear).eq("event_code", eventCode)
         .maybeSingle();
       if (eventReadError) throw new Error(`Could not load saved event link: ${eventReadError.message}`);
       storedEvent = eventRecord as FirstRecord | null;
