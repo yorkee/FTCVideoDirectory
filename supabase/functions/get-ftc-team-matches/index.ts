@@ -107,6 +107,29 @@ function meaningfulTokens(value: string): string[] {
   const ignored = new Set(["first", "tech", "challenge", "ftc", "robotics", "robot", "2026", "2027", "2026-2027", "event", "qualifier", "qualification", "tournament", "the", "and"]);
   return [...new Set(value.toLowerCase().replace(/[^a-z0-9 ]/g, " ").split(/\s+/).filter(token => token.length > 2 && !ignored.has(token)))];
 }
+async function discoverFirstEventYoutubeUrl(event: EventRow): Promise<string | null> {
+  const eventPageUrl = `https://ftc-events.firstinspires.org/${event.season_year}/${encodeURIComponent(event.event_code)}`;
+  const response = await fetch(eventPageUrl);
+  if (!response.ok) return null;
+
+  const html = await response.text();
+  const hrefs = [...html.matchAll(/href\\s*=\\s*["']([^"']+)["']/gi)];
+  for (const match of hrefs) {
+    try {
+      const candidate = new URL(match[1].replace(/&amp;/g, "&"), eventPageUrl);
+      const host = candidate.hostname.toLowerCase();
+      const isYoutube = host === "youtube.com" || host.endsWith(".youtube.com") || host === "youtu.be";
+      const isVideo = candidate.pathname.startsWith("/live/") ||
+        (candidate.pathname === "/watch" && candidate.searchParams.has("v")) ||
+        (candidate.pathname === "/playlist" && candidate.searchParams.has("list"));
+      if (isYoutube && isVideo) return candidate.toString();
+    } catch {
+      // Ignore malformed or unrelated links in the FIRST event page.
+    }
+  }
+  return null;
+}
+
 async function discoverYoutubeUrl(event: EventRow, apiKey: string): Promise<string | null> {
   const eventTokens = meaningfulTokens(event.event_name);
   if (eventTokens.length < 2) return null;
@@ -229,16 +252,19 @@ Deno.serve(async (req: Request) => {
       if (eventReadError) throw new Error(`Could not load saved event link: ${eventReadError.message}`);
       storedEvent = eventRecord as FirstRecord | null;
 
-      if (youtubeApiKey && storedEvent && !storedEvent.youtube_url) {
+      if (storedEvent && !storedEvent.youtube_url) {
         const lastSearched = storedEvent.youtube_last_searched_at ? new Date(String(storedEvent.youtube_last_searched_at)).getTime() : 0;
         const sevenDays = 7 * 24 * 60 * 60 * 1000;
         if (!lastSearched || Date.now() - lastSearched >= sevenDays) {
-          // Claim the search window before calling YouTube, preventing repeat searches from concurrent team requests.
+          // Claim the search window before checking FIRST and YouTube, preventing repeat requests from concurrent team lookups.
           await supabase.from("ftc_events").update({ youtube_last_searched_at: new Date().toISOString() }).eq("event_code", eventCode);
           const row = eventRows.find(item => item.event_code === eventCode);
           if (row) {
             try {
-              const youtubeUrl = await discoverYoutubeUrl(row, youtubeApiKey);
+              // FIRST's event page is the authoritative source for its posted livestream.
+              // Use YouTube search as a fallback when FIRST has not published a link.
+              const youtubeUrl = await discoverFirstEventYoutubeUrl(row) ??
+                (youtubeApiKey ? await discoverYoutubeUrl(row, youtubeApiKey) : null);
               if (youtubeUrl) {
                 const { error: youtubeUpdateError } = await supabase.from("ftc_events")
                   .update({ youtube_url: youtubeUrl, youtube_verified: false, updated_at: new Date().toISOString() })
@@ -247,7 +273,7 @@ Deno.serve(async (req: Request) => {
                 if (youtubeUpdateError) console.error("Could not save discovered YouTube URL:", youtubeUpdateError.message);
               }
             } catch (youtubeError) {
-              console.error("YouTube discovery failed:", youtubeError instanceof Error ? youtubeError.message : youtubeError);
+              console.error("Event video discovery failed:", youtubeError instanceof Error ? youtubeError.message : youtubeError);
             }
           }
           const { data: refreshed } = await supabase.from("ftc_events")
