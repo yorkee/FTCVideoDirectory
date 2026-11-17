@@ -866,7 +866,7 @@ button {
 .match-alliance small { color:#59677a; font-size:9px; overflow-wrap:anywhere; }
 .match-alliance b { font:600 14px "Space Grotesk"; color:#34445a; }
 .match-alliance.team-alliance { outline:1px solid currentColor; outline-offset:-1px; }
-.match-alliance svg { display:none; }
+.match-alliance svg { color:#39875e; }
 .match-upcoming { grid-column:2 / 4; display:flex; align-items:center; gap:5px; color:#9a8a70; font:8px "DM Mono"; }
 .event-no-matches { margin:0; padding:12px 15px; border-top:1px solid #edf0f3; color:#909baa; font-size:10px; }
 .first-attribution { color:#9aa4b1; font-size:9px; text-align:right; margin:12px 2px 0; }
