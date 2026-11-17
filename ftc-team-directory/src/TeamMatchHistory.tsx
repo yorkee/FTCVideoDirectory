@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { CalendarDays, Clock3, ExternalLink, MapPin, RefreshCw, Trophy } from 'lucide-react';
+import { CalendarDays, Clock3, ExternalLink, MapPin, RefreshCw, Trophy, Youtube } from 'lucide-react';
 import { hasSupabaseConfig, supabase } from './lib/supabase';
 import type { Team } from './types';
 
@@ -14,7 +14,7 @@ type Match = {
   redTeams: FirstRecord[];
   blueTeams: FirstRecord[];
 };
-type TeamEvent = { event: FirstRecord; matches: Match[] };
+type TeamEvent = { event: FirstRecord & { youtubeUrl?: string | null; youtubeVerified?: boolean }; matches: Match[] };
 type HistoryResponse = { success: boolean; season: number; teamNumber: number; events: TeamEvent[]; error?: string };
 
 function text(value: unknown, fallback = ''): string {
@@ -91,7 +91,7 @@ export default function TeamMatchHistory({ team }: { team: Team }) {
             {dateRange(event) && <span><CalendarDays size={13} />{dateRange(event)}</span>}
             {location && <span><MapPin size={13} />{location}</span>}
           </div>
-          {!matches.length ? <p className="event-no-matches">No published matches for this team at this event yet.</p> :
+          {event.youtubeUrl && <a className="event-youtube-link" href={event.youtubeUrl} target="_blank" rel="noreferrer"><Youtube size={16} /> Watch event livestream <ExternalLink size={12} />{event.youtubeVerified ? <span>VERIFIED</span> : <span>LIKELY MATCH</span>}</a>}\n          {!matches.length ? <p className="event-no-matches">No published matches for this team at this event yet.</p> :
             <div className="match-list">{matches.map((match, index) => {
               const played = isPlayed(match);
               const redWon = match.scoreRedFinal !== null && match.scoreBlueFinal !== null && match.scoreRedFinal > match.scoreBlueFinal;
