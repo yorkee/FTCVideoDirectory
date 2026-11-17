@@ -99,7 +99,7 @@ function toEventRow(event: FirstRecord, seasonYear: number): EventRow | null {
   };
 }
 function parseIsoDuration(value: string): number {
-  const match = value.match(/^PT(?:(\\d+)H)?(?:(\\d+)M)?(?:(\\d+(?:\\.\\d+)?)S)?$/);
+  const match = value.match(/^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+(?:\.\d+)?)S)?$/);
   if (!match) return 0;
   return Number(match[1] ?? 0) * 3600 + Number(match[2] ?? 0) * 60 + Number(match[3] ?? 0);
 }
