@@ -1,2 +1,5 @@
 [functions.get-ftc-team-matches]
 verify_jwt = false
+
+[functions.get-ftc-video-queue]
+verify_jwt = false
