@@ -66,7 +66,14 @@ function matchMergeKey(match: FirstRecord): string {
   // Match numbers can repeat in playoff brackets. Alliance assignments distinguish
   // those matches while still matching the scheduled row to its result row.
   const fallback = `${description}:${String(match.field ?? "")}:${String(match.startTime ?? "")}`;
-  return [String(match.matchNumber ?? ""), teams || fallback].join("|");
+  // FIRST playoff brackets can reuse a match number and the same alliance teams
+  // in different bracket series. Include series so those distinct matches do
+  // not overwrite each other when schedule rows and results are merged.
+  return [
+    String(match.series ?? ""),
+    String(match.matchNumber ?? ""),
+    teams || fallback,
+  ].join("|");
 }
 function mergeScheduleAndResults(schedulePayload: FirstRecord, resultPayload: FirstRecord, level: string): FirstRecord[] {
   const scheduled = Array.isArray(schedulePayload.schedule) ? schedulePayload.schedule as FirstRecord[] : [];
