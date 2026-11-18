@@ -74,20 +74,33 @@ Deno.serve(async (req: Request) => {
 
     if (status) jobsQuery = jobsQuery.eq("status", status);
 
-    const [jobsResult, countsResult] = await Promise.all([
+    const countForStatus = async (value?: string) => {
+      let query = supabase.from("ftc_video_processing_jobs").select("id", { count: "exact", head: true });
+      if (value) query = query.eq("status", value);
+      return await query;
+    };
+
+    const [jobsResult, pendingCount, processingCount, completedCount, failedCount, totalCount] = await Promise.all([
       jobsQuery,
-      supabase.from("ftc_video_processing_jobs").select("status"),
+      countForStatus("pending"),
+      countForStatus("processing"),
+      countForStatus("completed"),
+      countForStatus("failed"),
+      countForStatus(),
     ]);
 
     if (jobsResult.error) throw new Error(`Could not read queue jobs: ${jobsResult.error.message}`);
-    if (countsResult.error) throw new Error(`Could not read queue counts: ${countsResult.error.message}`);
-
-    const counts = { pending: 0, processing: 0, completed: 0, failed: 0, total: 0 };
-    for (const row of countsResult.data ?? []) {
-      const key = row.status as keyof typeof counts;
-      if (key in counts && key !== "total") counts[key]++;
-      counts.total++;
+    for (const result of [pendingCount, processingCount, completedCount, failedCount, totalCount]) {
+      if (result.error) throw new Error(`Could not read queue counts: ${result.error.message}`);
     }
+
+    const counts = {
+      pending: pendingCount.count ?? 0,
+      processing: processingCount.count ?? 0,
+      completed: completedCount.count ?? 0,
+      failed: failedCount.count ?? 0,
+      total: totalCount.count ?? 0,
+    };
 
     return json({
       success: true,
