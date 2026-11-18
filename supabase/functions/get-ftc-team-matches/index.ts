@@ -318,9 +318,12 @@ Deno.serve(async (req: Request) => {
       const levels = ["qual", "playoff"];
       const matchesForEvent: FirstRecord[] = [];
       for (const level of levels) {
+        // Fetch the full event schedule/results and filter locally below.
+        // FIRST's teamNumber-filtered playoff response can omit bracket matches
+        // (for example, a team's second upper-bracket match).
         const [schedulePayload, resultPayload] = await Promise.all([
-          firstGet(`${seasonYear}/schedule/${encodeURIComponent(eventCode)}?tournamentLevel=${level}&teamNumber=${teamNumber}`, headers),
-          firstGet(`${seasonYear}/matches/${encodeURIComponent(eventCode)}?tournamentLevel=${level}&teamNumber=${teamNumber}`, headers),
+          firstGet(`${seasonYear}/schedule/${encodeURIComponent(eventCode)}?tournamentLevel=${level}`, headers),
+          firstGet(`${seasonYear}/matches/${encodeURIComponent(eventCode)}?tournamentLevel=${level}`, headers),
         ]);
         matchesForEvent.push(...mergeScheduleAndResults(schedulePayload, resultPayload, level));
       }
