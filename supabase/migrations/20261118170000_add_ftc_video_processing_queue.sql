@@ -105,7 +105,11 @@ set search_path = ''
 as $$
 begin
   update public.ftc_video_processing_jobs
-  set status = case when p_success then 'completed' else 'pending' end,
+  set status = case
+        when p_success then 'completed'
+        when attempts >= 5 then 'failed'
+        else 'pending'
+      end,
       last_error = case when p_success then null else left(coalesce(p_error, 'Unknown processing error'), 4000) end,
       locked_by = null,
       locked_at = null,
