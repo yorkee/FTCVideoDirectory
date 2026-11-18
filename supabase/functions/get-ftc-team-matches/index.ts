@@ -82,6 +82,18 @@ function mergeScheduleAndResults(schedulePayload: FirstRecord, resultPayload: Fi
   }
   return [...merged.values()];
 }
+function getEventStreamUrl(event: FirstRecord): string | null {
+  // FIRST's Event schema exposes liveStreamUrl and may also provide webcasts.
+  // Prefer the explicitly designated live stream, then the first webcast.
+  const liveStreamUrl = text(event.liveStreamUrl);
+  if (liveStreamUrl) return liveStreamUrl;
+  const webcasts = Array.isArray(event.webcasts) ? event.webcasts : [];
+  for (const webcast of webcasts) {
+    const url = text(webcast);
+    if (url) return url;
+  }
+  return null;
+}
 function toEventRow(event: FirstRecord, seasonYear: number): EventRow | null {
   const eventCode = text(event.code);
   const eventName = text(event.name);
@@ -247,6 +259,7 @@ Deno.serve(async (req: Request) => {
         continue;
       }
 
+      const eventStreamUrl = getEventStreamUrl(event);
       let storedEvent: FirstRecord | null = null;
       const { data: eventRecord, error: eventReadError } = await supabase
         .from("ftc_events")
@@ -256,14 +269,13 @@ Deno.serve(async (req: Request) => {
       if (eventReadError) throw new Error(`Could not load saved event link: ${eventReadError.message}`);
       storedEvent = eventRecord as FirstRecord | null;
 
-      if (storedEvent && (!storedEvent.youtube_verified || !text(storedEvent.youtube_url))) {
+      if (storedEvent && (eventStreamUrl !== text(storedEvent.youtube_url) || !storedEvent.youtube_verified || !text(storedEvent.youtube_url))) {
         const row = eventRows.find(item => item.event_code === eventCode);
         if (row) {
           try {
-            // FIRST's event page is authoritative. Check it even when an older
-            // YouTube URL is already saved, and replace that URL if FIRST now
-            // publishes a different official event video.
-            const officialUrl = await discoverFirstEventYoutubeUrl(row);
+            // The FIRST API's event-level Live Streams field is the strongest
+            // source. Use it before scraping the event page or searching YouTube.
+            const officialUrl = eventStreamUrl ?? await discoverFirstEventYoutubeUrl(row);
             if (officialUrl && officialUrl !== text(storedEvent.youtube_url)) {
               const { error: officialUpdateError } = await supabase.from("ftc_events")
                 .update({ youtube_url: officialUrl, youtube_verified: true, updated_at: new Date().toISOString() })
