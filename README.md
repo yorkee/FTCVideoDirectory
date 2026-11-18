@@ -34,4 +34,12 @@ The function is configured with `verify_jwt = false` because it is a public, rea
 
 The current implementation enables season 2026 (the 2026–27 FTC season). Add a season to the Edge Function allow-list when the directory rolls forward.
 
+## Local video-processing queue worker
+
+When an event's YouTube URL is saved or changed, a database trigger adds a job to `ftc_video_processing_jobs`. Existing event videos are backfilled by the migration. The local Linux worker checks for pending jobs immediately at startup and then every three hours (10,800 seconds).
+
+See [local-worker/README.md](local-worker/README.md) for setup and optional systemd configuration. The first phase is queue/polling verification only; OCR/video processing will be connected in the next phase. Keep the worker's Supabase service-role key in its local `.env` file only—never in the frontend or source control.
+
+Apply the database migration before starting the worker.
+
 FIRST API data is subject to FIRST's terms. This project is independent of FIRST; match/event data is attributed in the team details view. Review the [FIRST API information and terms](https://ftc-events.firstinspires.org/services/API), including restrictions on commercial use, before using the data commercially.
