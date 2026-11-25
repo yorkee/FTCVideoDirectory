@@ -62,3 +62,8 @@ The match-history Edge Function also persists FIRST event metadata and the team-
 To enable automatic YouTube discovery, add a YouTube Data API v3 key to the Supabase Edge Function secrets as `YOUTUBE_API_KEY`. The function searches completed, long videos, then confirms the candidate is a completed livestream at least two hours long and has a reasonable event-name match. Events without a match are retried no more than once every seven days. Automatically discovered URLs are stored with `youtube_verified = false` so they can be reviewed; manually confirmed links can be marked verified in `ftc_events`.
 
 Without `YOUTUBE_API_KEY`, FIRST event/team relationships continue to sync and manually entered YouTube links still display, but automatic discovery is disabled.
+
+## Event search
+Select Events and search by event code, partial name, city, state or venue. Direct links: `?event_code=USMIROQ&season=2026` and `?event_search=Michigan%20Qualifier`. The search uses `search_ftc_events` RPC and only returns indexed events. Worldwide event sync and individual match video links are future work.
+
+Manual checks: run `npm ci` and `npm run build`; verify team search, event search, direct URLs, empty/error states and pagination against a configured Supabase project.

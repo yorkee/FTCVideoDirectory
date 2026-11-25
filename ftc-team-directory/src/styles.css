@@ -910,3 +910,9 @@ button {
   font-size: 0.62rem;
   letter-spacing: 0.04em;
 }
+
+.search-modes {display:flex;gap:8px;margin-bottom:16px;}
+.search-modes button,.event-pagination button {border:1px solid #dfe5ec;border-radius:7px;padding:8px 16px;background:white;color:#172338;}
+.search-modes button[aria-pressed="true"] {background:#17263b;color:white;}
+.event-pagination {display:flex;align-items:center;justify-content:center;gap:12px;margin-top:20px;}
+.event-pagination button:disabled {opacity:.5;cursor:default;}
