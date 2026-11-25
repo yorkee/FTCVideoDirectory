@@ -22,11 +22,33 @@ function text(value: unknown, fallback = ''): string {
   return typeof value === 'string' && value.trim() ? value.trim() : fallback;
 }
 function dateRange(event: FirstRecord): string {
-  const start = text(event.dateStart);
-  const end = text(event.dateEnd);
-  if (!start) return '';
-  const format = (value: string) => new Date(value + 'T12:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-  return end && end !== start ? `${format(start)} – ${format(end)}` : format(start);
+  function format(value: unknown): string {
+    const raw = text(value);
+    // FIRST may return either a calendar date or an ISO date-time.
+    const match = /^(\d{4})-(\d{2})-(\d{2})(?:$|T| )/.exec(raw);
+    if (!match) return '';
+
+    const [, year, month, day] = match;
+    const date = new Date(Number(year), Number(month) - 1, Number(day), 12);
+    if (
+      date.getFullYear() !== Number(year) ||
+      date.getMonth() !== Number(month) - 1 ||
+      date.getDate() !== Number(day)
+    ) {
+      return '';
+    }
+
+    return date.toLocaleDateString(undefined, {
+      month: 'short',
+      day: 'numeric',
+    });
+  }
+
+  const start = format(event.dateStart);
+  const end = format(event.dateEnd);
+
+  if (!start) return end;
+  return end && end !== start ? `${start} – ${end}` : start;
 }
 function teamList(teams: FirstRecord[], teamNumber: number): string {
   return teams.map(team => {
