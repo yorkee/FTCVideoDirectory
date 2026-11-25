@@ -7,7 +7,9 @@ type Recording = {
   recording_type: string;
 };
 
-export default function EventVideos({ event }: { event: EventRow }) {
+type VideoEvent = Pick<EventRow, 'season_year' | 'event_code' | 'youtube_url' | 'youtube_verified' | 'official_livestream_url'>;
+
+export default function EventVideos({ event }: { event: VideoEvent }) {
   const [videos, setVideos] = useState<Recording[]>([]);
 
   const [discoveredProvider, setDiscoveredProvider] = useState<string | null>(null);
@@ -26,6 +28,15 @@ export default function EventVideos({ event }: { event: EventRow }) {
           .eq('season_year', event.season_year)
           .eq('event_code', event.event_code);
         if (active) setVideos(data ?? []);
+        const { data: stored } = await client
+          .from('ftc_events')
+          .select('official_livestream_url')
+          .eq('season_year', event.season_year)
+          .eq('event_code', event.event_code)
+          .maybeSingle();
+        if (active && stored?.official_livestream_url) {
+          setDiscoveredProvider(stored.official_livestream_url);
+        }
       };
       void (async () => {
         await refresh();
@@ -36,7 +47,9 @@ export default function EventVideos({ event }: { event: EventRow }) {
             body: { seasonYear: event.season_year, eventCode: event.event_code },
           });
           if (!error && active) {
-            setDiscoveredProvider(data?.official_livestream_url ?? null);
+            if (data?.official_livestream_url) {
+              setDiscoveredProvider(data.official_livestream_url);
+            }
             await refresh();
           }
         } finally {
