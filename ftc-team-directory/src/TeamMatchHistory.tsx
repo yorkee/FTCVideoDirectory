@@ -41,6 +41,7 @@ function dateRange(event: FirstRecord): string {
     return date.toLocaleDateString(undefined, {
       month: 'short',
       day: 'numeric',
+      year: 'numeric',
     });
   }
 
