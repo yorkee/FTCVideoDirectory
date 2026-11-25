@@ -3,3 +3,6 @@ verify_jwt = false
 
 [functions.get-ftc-video-queue]
 verify_jwt = false
+
+[functions.discover-ftc-event-videos]
+verify_jwt = false
