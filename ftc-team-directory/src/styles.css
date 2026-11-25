@@ -916,3 +916,6 @@ button {
 .search-modes button[aria-pressed="true"] {background:#17263b;color:white;}
 .event-pagination {display:flex;align-items:center;justify-content:center;gap:12px;margin-top:20px;}
 .event-pagination button:disabled {opacity:.5;cursor:default;}
+
+.hero.compact-search { padding-top: 16px; }
+@media (max-width: 760px) { .hero.compact-search { padding-top: 10px; } }
