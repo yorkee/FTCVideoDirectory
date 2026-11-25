@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
-import { CalendarDays, Clock3, ExternalLink, MapPin, RefreshCw, Trophy, Youtube } from 'lucide-react';
+import { CalendarDays, Clock3, ExternalLink, MapPin, RefreshCw, Trophy } from 'lucide-react';
 import { hasSupabaseConfig, supabase } from './lib/supabase';
 import type { Team } from './types';
+import EventVideos from './components/events/EventVideos';
 
 type FirstRecord = Record<string, unknown>;
 type Match = {
@@ -35,16 +36,6 @@ function teamList(teams: FirstRecord[], teamNumber: number): string {
 }
 function isPlayed(match: Match): boolean {
   return match.scoreRedFinal !== null && match.scoreBlueFinal !== null;
-}
-function isYoutubePlaylist(value: string): boolean {
-  try {
-    const url = new URL(value);
-    const host = url.hostname.toLowerCase();
-    const isYoutube = host === 'youtube.com' || host.endsWith('.youtube.com') || host === 'youtu.be';
-    return isYoutube && (url.pathname === '/playlist' || (!url.searchParams.has('v') && url.searchParams.has('list')));
-  } catch {
-    return false;
-  }
 }
 
 export default function TeamMatchHistory({ team }: { team: Team }) {
@@ -101,7 +92,16 @@ export default function TeamMatchHistory({ team }: { team: Team }) {
             {dateRange(event) && <span><CalendarDays size={13} />{dateRange(event)}</span>}
             {location && <span><MapPin size={13} />{location}</span>}
           </div>
-          {event.youtubeUrl && <a className="event-youtube-link" href={event.youtubeUrl} target="_blank" rel="noreferrer"><Youtube size={16} /> {isYoutubePlaylist(event.youtubeUrl) ? 'View event video playlist' : 'Watch event video'} <ExternalLink size={12} />{isYoutubePlaylist(event.youtubeUrl) ? <span>PLAYLIST</span> : event.youtubeVerified ? <span>VERIFIED</span> : <span>LIKELY MATCH</span>}</a>}
+          {text(event.code) && (
+            <EventVideos
+              event={{
+                season_year: team.season_year,
+                event_code: text(event.code),
+                youtube_url: event.youtubeUrl ?? null,
+                youtube_verified: Boolean(event.youtubeVerified),
+              }}
+            />
+          )}
           {!matches.length ? <p className="event-no-matches">No published matches for this team at this event yet.</p> :
             <div className="match-list">{matches.map((match, index) => {
               const played = isPlayed(match);
