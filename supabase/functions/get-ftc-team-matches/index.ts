@@ -126,27 +126,47 @@ function meaningfulTokens(value: string): string[] {
   const ignored = new Set(["first", "tech", "challenge", "ftc", "robotics", "robot", "2026", "2027", "2026-2027", "event", "qualifier", "qualification", "tournament", "the", "and"]);
   return [...new Set(value.toLowerCase().replace(/[^a-z0-9 ]/g, " ").split(/\s+/).filter(token => token.length > 2 && !ignored.has(token)))];
 }
-async function discoverFirstEventYoutubeUrl(event: EventRow): Promise<string | null> {
-  const eventPageUrl = `https://ftc-events.firstinspires.org/${event.season_year}/${encodeURIComponent(event.event_code)}`;
-  const response = await fetch(eventPageUrl);
-  if (!response.ok) return null;
-
-  const html = await response.text();
-  const hrefs = [...html.matchAll(/href\s*=\s*["']([^"']+)["']/gi)];
-  for (const match of hrefs) {
-    try {
-      const candidate = new URL(match[1].replace(/&amp;/g, "&"), eventPageUrl);
-      const host = candidate.hostname.toLowerCase();
-      const isYoutube = host === "youtube.com" || host.endsWith(".youtube.com") || host === "youtu.be";
-      const isVideo = candidate.pathname.startsWith("/live/") ||
-        (candidate.pathname === "/watch" && candidate.searchParams.has("v")) ||
-        (candidate.pathname === "/playlist" && candidate.searchParams.has("list"));
-      if (isYoutube && isVideo) return candidate.toString();
-    } catch {
-      // Ignore malformed or unrelated links in the FIRST event page.
-    }
+function youtubeVideoUrl(value: string): string | null {
+  try {
+    const u = new URL(value.replace(/&amp;/g, "&"));
+    if (u.protocol !== "https:") return null;
+    const id = u.hostname === "youtu.be" ? u.pathname.split("/")[1] :
+      ["youtube.com","www.youtube.com","m.youtube.com","www.youtube-nocookie.com"].includes(u.hostname) ?
+      (u.pathname === "/watch" ? u.searchParams.get("v") : /^\/(?:live|embed)\//.test(u.pathname) ? u.pathname.split("/")[2] : null) : null;
+    return id && /^[A-Za-z0-9_-]{11}$/.test(id) ? "https://www.youtube.com/watch?v="+id : null;
+  } catch { return null; }
+}
+function providerUrl(event: EventRow, value: string): string | null {
+  try {
+    const u = new URL(value);
+    if (u.protocol !== "https:" || u.hostname !== "fimav.us" || u.port || u.username || u.password) return null;
+    if (u.pathname.toLowerCase() !== ("/live/"+event.season_year+"/"+event.event_code).toLowerCase()) return null;
+    return u.origin+u.pathname;
+  } catch { return null; }
+}
+async function pageHtml(url: string): Promise<string> {
+  const r = await fetch(url, {redirect:"error",signal:AbortSignal.timeout(10000)});
+  return r.ok ? await r.text() : "";
+}
+function extractRecordings(html:string): Array<{url:string;kind:string}> {
+  const found = new Map<string,{url:string;kind:string}>();
+  for (const m of html.matchAll(/<(?:a|iframe)\b[^>]*(?:href|src)\s*=\s*["']([^"']+)["'][^>]*>(?:([^<]*)<\/a>)?/gi)) {
+    const url=youtubeVideoUrl(m[1]); if(!url) continue;
+    const label=(m[2]??"")+" "+m[0];
+    const kind=/practice|inspection/i.test(label)?"practice":/day\s*\d|competition|qualification|playoff/i.test(label)?"competition":"unknown";
+    const old=found.get(url); if(!old || old.kind==="unknown") found.set(url,{url,kind});
   }
-  return null;
+  return [...found.values()];
+}
+async function discoverOfficialRecordings(event: EventRow, apiUrl: string|null): Promise<Array<{url:string;kind:string}>> {
+  const direct=apiUrl && youtubeVideoUrl(apiUrl);
+  if(direct) return [{url:direct,kind:"unknown"}];
+  const page=await pageHtml("https://ftc-events.firstinspires.org/"+event.season_year+"/"+encodeURIComponent(event.event_code));
+  const directLinks=extractRecordings(page);
+  const provider=(apiUrl && providerUrl(event,apiUrl)) || [...page.matchAll(/href\s*=\s*["']([^"']+)["']/gi)].map(m=>providerUrl(event,m[1])).find(Boolean);
+  if(!provider) return directLinks;
+  try { return [...directLinks,...extractRecordings(await pageHtml(provider))]; }
+  catch(e) {console.error("Official provider fetch failed",e);return directLinks;}
 }
 
 async function discoverYoutubeUrl(event: EventRow, apiKey: string): Promise<string | null> {
@@ -282,7 +302,12 @@ Deno.serve(async (req: Request) => {
           try {
             // The FIRST API's event-level Live Streams field is the strongest
             // source. Use it before scraping the event page or searching YouTube.
-            const officialUrl = eventStreamUrl ?? await discoverFirstEventYoutubeUrl(row);
+            const recordings = await discoverOfficialRecordings(row,eventStreamUrl);
+            if(recordings.length) {
+              const {error: recordingError}=await supabase.from("ftc_event_videos").upsert(recordings.map(v=>({season_year:seasonYear,event_code:eventCode,youtube_url:v.url,recording_type:v.kind,verified:true})),{onConflict:"season_year,event_code,youtube_url",ignoreDuplicates:true});
+              if(recordingError) throw recordingError;
+            }
+            const officialUrl = recordings.find(v=>v.kind==="competition")?.url ?? recordings.find(v=>v.kind==="unknown")?.url ?? null;
             if (officialUrl && officialUrl !== text(storedEvent.youtube_url)) {
               const { error: officialUpdateError } = await supabase.from("ftc_events")
                 .update({ youtube_url: officialUrl, youtube_verified: true, updated_at: new Date().toISOString() })
