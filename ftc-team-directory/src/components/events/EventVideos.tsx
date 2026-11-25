@@ -10,23 +10,44 @@ type Recording = {
 export default function EventVideos({ event }: { event: EventRow }) {
   const [videos, setVideos] = useState<Recording[]>([]);
 
+  const [discoveredProvider, setDiscoveredProvider] = useState<string | null>(null);
+  const [discovering, setDiscovering] = useState(false);
+
   useEffect(() => {
     let active = true;
     setVideos([]);
-    if (supabase) {
-      void supabase
-        .from('ftc_event_videos')
-        .select('youtube_url,recording_type')
-        .eq('season_year', event.season_year)
-        .eq('event_code', event.event_code)
-        .then(({ data }) => {
-          if (active) setVideos(data ?? []);
-        });
+    setDiscoveredProvider(null);
+    const client = supabase;
+    if (client) {
+      const refresh = async () => {
+        const { data } = await client
+          .from('ftc_event_videos')
+          .select('youtube_url,recording_type')
+          .eq('season_year', event.season_year)
+          .eq('event_code', event.event_code);
+        if (active) setVideos(data ?? []);
+      };
+      void (async () => {
+        await refresh();
+        if (!active) return;
+        setDiscovering(true);
+        try {
+          const { data, error } = await client.functions.invoke('discover-ftc-event-videos', {
+            body: { seasonYear: event.season_year, eventCode: event.event_code },
+          });
+          if (!error && active) {
+            setDiscoveredProvider(data?.official_livestream_url ?? null);
+            await refresh();
+          }
+        } finally {
+          if (active) setDiscovering(false);
+        }
+      })().catch(console.error);
     }
     return () => { active = false; };
   }, [event.season_year, event.event_code]);
 
-  const provider = event.official_livestream_url;
+  const provider = discoveredProvider ?? event.official_livestream_url;
   const hasProvider = provider && /^https:\/\/fimav\.us\/live\//.test(provider);
   const recordings = videos.filter(video =>
     /^https:\/\/www\.youtube\.com\/watch\?v=[A-Za-z0-9_-]{11}$/.test(video.youtube_url)
@@ -77,6 +98,7 @@ export default function EventVideos({ event }: { event: EventRow }) {
         </p>
       )}
       {renderRecordings()}
+      {discovering && <p role="status">Checking official livestream sources…</p>}
     </>
   );
 }
